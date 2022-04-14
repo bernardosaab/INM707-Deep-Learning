@@ -28,10 +28,12 @@ class DQNetwork(nn.Module):
         self.seed = torch.manual_seed(seed)
     
         #self.emb = nn.Embedding(self.input_dim, 4)
-        self.fc1 = nn.Linear(1, self.fc1_dim)   
+        self.fc1 = nn.Linear(5, self.fc1_dim)   
+        self.bn1 = nn.BatchNorm1d(self.fc1_dim)
         self.fc2 = nn.Linear(self.fc1_dim, self.fc2_dim)
-        self.fc3 = nn.Linear(self.fc3_dim, self.fc3_dim)
-        self.out = nn.Linear(self.fc3_dim, self.output_dim)
+        self.bn2 = nn.BatchNorm1d(self.fc2_dim)
+        #self.fc3 = nn.Linear(self.fc3_dim, self.fc3_dim)
+        self.out = nn.Linear(self.fc2_dim, self.output_dim)
         
 
         #self.optimizer = optim.Adam(self.parameters(),lr=lr)
@@ -47,9 +49,9 @@ class DQNetwork(nn.Module):
         #torch.tensor(state).to(torch.int64)
         state = state.type(torch.FloatTensor).to(self.device)
         #x = F.relu(self.fc1(self.emb(state)))
-        x = F.relu(self.fc1(state))
-        x = F.relu(self.fc2(x))
-        x = F.relu(self.fc3(x))
+        x = F.relu(self.bn1(self.fc1(state)))
+        x = F.relu(self.bn2(self.fc2(x)))
+        #x = F.relu(self.fc3(x))
         actions = self.out(x)
         return actions 
 
@@ -60,21 +62,20 @@ class ConvDQNetwork(nn.Module):
     # Network initialisation
     def __init__(self, state_size, fc1_dim, fc2_dim, fc3_dim, action_size, seed):
         super(ConvDQNetwork, self).__init__()
-        self.input_dim = state_size
+        self.input_dim = (5,)
         self.output_dim = action_size
         #self.fc_input_dim = self.feature_size()
         
         self.features = nn.Sequential(
-            nn.Conv2d(self.input_dim[0], 32, kernel_size=8, stride=4),
+            nn.Conv2d(self.input_dim[0], 25, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(32, 64, kernel_size=4, stride=2),
+            nn.Conv2d(25, 50, kernel_size=3, stride=2),
             nn.ReLU(),
-            nn.Conv2d(64, 64, kernel_size=3, stride=1),
+            nn.Conv2d(50, 50, kernel_size=3, stride=2),
             nn.ReLU()
         )
 
         self.fc = nn.Sequential(
-            #nn.Linear(self.fc_input_dim, 128),
             nn.Linear(self.feature_size(), 128),
             nn.ReLU(),
             nn.Linear(128, 256),

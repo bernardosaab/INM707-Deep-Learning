@@ -10,7 +10,7 @@ import torch.optim as optim
 
 REPLAY_MEMORY_SIZE = 10000  # replay buffer size
 MIN_REPLAY_MEMORY_SIZE = 1000
-BATCH_SIZE = 64         # minibatch size
+BATCH_SIZE = 64          # minibatch size
 #GAMMA = 0.99            # discount factor
 TAU = 10
 #1e-3                    # for soft update of target parameters
@@ -22,7 +22,7 @@ device = torch.device("cuda:0" if torch.cuda.is_available() else "cpu")
 class DQNAgent():
     """Interacts with and learns from the environment."""
 
-    def __init__(self, state_size, fc1_dim, fc2_dim, fc3_dim, action_size, seed, learning_rate, gamma, with_conv=True):
+    def __init__(self, state_size, fc1_dim, fc2_dim, fc3_dim, action_size, seed, learning_rate, gamma, with_conv=True, loss_fun='mse'):
         """Initialize an Agent object.
         
         Params
@@ -40,7 +40,8 @@ class DQNAgent():
         self.seed = random.seed(seed)
         self.gamma = gamma
         self.with_conv = with_conv
-        
+        self.loss_fun = loss_fun
+
         # Q-Network (With or without convolution layers)
         if self.with_conv:
             # Local Network
@@ -101,7 +102,7 @@ class DQNAgent():
         # Epsilon-greedy action selection
         if np.random.random() > epsilon:
             state = torch.from_numpy(np.array(observation)).float().unsqueeze(0).to(device)
-            #self.qnetwork_local.eval()
+            self.qnetwork_local.eval() # To avoid issues with batch normalisation due to have 1 training sample 
             with torch.no_grad():
                 action_values = self.qnetwork_local(state)               
                 action_values_valid = torch.tensor([-np.inf,-np.inf,-np.inf,-np.inf-np.inf,-np.inf,-np.inf,-np.inf]).to(device)
@@ -110,7 +111,7 @@ class DQNAgent():
                         action_values_valid[action] = torch.from_numpy(np.array(value)).to(device)
                 #action_values = torch.from_numpy(np.array([action_values[0][index] for index in valid_actions])).float().unsqueeze(0).to(device)
                 action = np.argmax(action_values_valid.cpu().data.numpy())
-                #self.qnetwork_local.train()
+            self.qnetwork_local.train() # Resume training mode
         else:
             action_values = [action for action in valid_actions]
             #print(action_values)
@@ -132,7 +133,6 @@ class DQNAgent():
         """
         states, actions, rewards, next_states, terminals = experiences
         
-        #print('1',states.size())
         #print('2',states)
         #print(actions)
         # Get expected Q values from local network
@@ -155,10 +155,10 @@ class DQNAgent():
         #print('2',Q_expected.size(),Q_targets.size())
 
         # Compute Loss function
-        # MSE Loss
-        loss = F.huber_loss(Q_expected, Q_targets)
-        # MSE Loss
-        #loss = F.mse_loss(Q_expected, Q_targets.squeeze())
+        if self.loss_fun == 'huber':
+            loss = F.huber_loss(Q_expected, Q_targets) # Huber Loss
+        elif self.loss_fun == 'mse': # MSE Loss
+            loss = F.mse_loss(Q_expected, Q_targets)
         
         # Minimize the loss
         self.optimizer.zero_grad()

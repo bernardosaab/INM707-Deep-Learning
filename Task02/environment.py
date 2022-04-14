@@ -114,7 +114,7 @@ class MapWalkingEnv:
                                 new_row, new_col, new_key_idx, new_host_idx, new_exit_idx=row, col, key_idx, host_idx, exit_idx
                                 reward = (
                                     0 #-0.1
-                                )  # Default reward when there is no pickup/dropoff/open and agent moves to an open cell
+                                )  # Default reward when there is no pickup/dropoff/open and agent moves to an open cell (not a wall or a mine)
                                 
                                 done = False
                                 agent_loc = (row, col)
@@ -132,28 +132,28 @@ class MapWalkingEnv:
                                     if new_host_idx == 0 and new_key_idx == 1 and new_exit_idx == 1 and \
                                     (agent_loc == (hostage_coord[0],hostage_coord[1])):
                                         new_host_idx = 1
-                                        reward = 200
+                                        reward = 20
                                     elif new_key_idx == 0 and (agent_loc == (key_coord[0],key_coord[1])):
                                         new_key_idx = 1
-                                        reward = 200
+                                        reward = 20
                                     elif self.territory[new_row, new_col] != 2: # key not at location or agent did not open a door yet
-                                        reward = -2
+                                        reward = -20
                                 elif action == 5: #'dropoff' 
                                     if (agent_loc == (exit_coord[0][0],exit_coord[0][1]) and \
                                         new_key_idx == 1 and new_host_idx == 1):
                                         done = True
-                                        reward = 1000
+                                        reward = 100
                                     elif agent_loc == (exit_coord[1][0],exit_coord[1][1]) : #(agent_loc == (exit_coord[0][0],exit_coord[0][1]) and (new_key_idx == 0)) or \
                                         done = True
-                                        reward = -10
+                                        reward = -100
                                     elif self.territory[new_row, new_col] != 2:  # dropoff at wrong location
-                                        reward = -2
+                                        reward = -20
                                 elif action == 6: #'open' 
                                     if (agent_loc == (exit_coord[0][0],exit_coord[0][1])) and (new_key_idx == 1 and new_exit_idx == 0):
                                         new_exit_idx = 1
-                                        reward = 200
+                                        #reward = 20
                                     elif self.territory[new_row, new_col] != 2:  # open at wrong location
-                                        reward = -2
+                                        reward = -20
 
                                 if (new_host_idx == 1 and new_key_idx == 1) or \
                                     new_exit_idx == 1:
@@ -165,9 +165,9 @@ class MapWalkingEnv:
                                 if self.territory[new_row, new_col] == 1:
                                     new_row = row
                                     new_col = col
-                                    reward = -1
+                                    reward = -10
                                 
-                                # If the agent bumps into a mine it reaches a terminal state:
+                                # If the agent bumps into a mine it reaches a terminal state
                                 if self.territory[new_row, new_col] == 2:
                                     new_row = row
                                     new_col = col
@@ -184,7 +184,7 @@ class MapWalkingEnv:
         self.initial_state_distrib /= self.initial_state_distrib.sum()
         self.action_space = Discrete(num_actions) #int(num_actions)
         self.observation_space = Discrete(num_states) # Encoded states shape
-        self.observation_space_decoded = len(list(self.decode(Discrete(0)))) # Decoded states shape
+        self.observation_space_decoded = len(list(self.decode(0))) # Decoded states shape
         
     def get_empty_cells(self, n_cells):
         empty_cells_coord = np.where( self.territory == 0 )
