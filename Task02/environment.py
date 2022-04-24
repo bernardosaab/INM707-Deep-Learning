@@ -1,7 +1,48 @@
 import numpy as np
 from discrete_space import Discrete
 
-class MapWalkingEnv:
+#These are the key actions you can apply at states
+action_dict = {
+    0: 'up',
+    1: 'down',
+    2: 'right',
+    3: 'left',
+    4: 'pickup',
+    5: 'dropoff',
+    6: 'open'
+}
+
+#Colours for environment
+color2num = dict(
+    gray=30,
+    red=31,
+    green=32,
+    yellow=33,
+    blue=34,
+    magenta=35,
+    cyan=36,
+    white=37,
+    crimson=38,
+)
+
+#Function to surround string with certain colour codes
+def colorise(string, color, bold=False, highlight=False):
+    attr = []
+    num = color2num[color]
+    if highlight:
+        num += 10
+    attr.append(str(num))
+    if bold:
+        attr.append("1")
+    attrs = ";".join(attr)
+    return f"\x1b[{attrs}m{string}\x1b[0m"
+
+# A function that counts the number of true values when the cumulative sum of n probabilities
+#In an array is greater than a randomly generated number used in the step function
+
+
+
+class MapWalkingEnvDoorReward:
 
     def __init__(self, N, M):
         # Numpy array that holds the information about the environment
@@ -46,6 +87,9 @@ class MapWalkingEnv:
         self.hostage_coord = hostage_coord = (9,8) # Static coordinates
         self.territory[hostage_coord[0],hostage_coord[1]] = 4
         
+        self.displ_board = np.zeros((8, 10, 10), dtype=np.uint8)
+        self.add_encoded_states()
+        
         # initial position of the agent will be decided by resetting the environment.
         self.position_agent = None
         self.start_agent = None
@@ -62,7 +106,7 @@ class MapWalkingEnv:
                                 4:'H', #3 : hostage zone    
                                 5:'S', #4 : safe zone
                                 6:'U', #6 : unsafe zone
-                                7:'A' #7 : agent location
+                                7:'A'  #7 : agent location
                               }
        
 
@@ -132,27 +176,27 @@ class MapWalkingEnv:
                                     if new_host_idx == 0 and new_key_idx == 1 and new_exit_idx == 1 and \
                                     (agent_loc == (hostage_coord[0],hostage_coord[1])):
                                         new_host_idx = 1
-                                        reward = 20
+                                        #reward = 100
                                     elif new_key_idx == 0 and (agent_loc == (key_coord[0],key_coord[1])):
                                         new_key_idx = 1
                                         reward = 20
-                                    elif self.territory[new_row, new_col] != 2: # key not at location or agent did not open a door yet
+                                    elif self.territory[new_row, new_col] != 2: # key not at location or agent did not open a door yet and receives a negative rewards
                                         reward = -20
                                 elif action == 5: #'dropoff' 
                                     if (agent_loc == (exit_coord[0][0],exit_coord[0][1]) and \
-                                        new_key_idx == 1 and new_host_idx == 1):
+                                        new_key_idx == 1 and new_host_idx == 1): # desired terminal state
                                         done = True
                                         reward = 100
-                                    elif agent_loc == (exit_coord[1][0],exit_coord[1][1]) : #(agent_loc == (exit_coord[0][0],exit_coord[0][1]) and (new_key_idx == 0)) or \
+                                    elif agent_loc == (exit_coord[1][0],exit_coord[1][1]) : # undesired terminal state
                                         done = True
                                         reward = -100
-                                    elif self.territory[new_row, new_col] != 2:  # dropoff at wrong location
+                                    elif self.territory[new_row, new_col] != 2:  # dropoff at wrong location and receives a negative rewards
                                         reward = -20
                                 elif action == 6: #'open' 
                                     if (agent_loc == (exit_coord[0][0],exit_coord[0][1])) and (new_key_idx == 1 and new_exit_idx == 0):
                                         new_exit_idx = 1
-                                        #reward = 20
-                                    elif self.territory[new_row, new_col] != 2:  # open at wrong location
+                                        reward = 20
+                                    elif self.territory[new_row, new_col] != 2:  # open at wrong location and receives a negative rewards
                                         reward = -20
 
                                 if (new_host_idx == 1 and new_key_idx == 1) or \
@@ -161,13 +205,13 @@ class MapWalkingEnv:
                                 else:
                                     new_exit_idx=0
                                     
-                                # If the agent bumps into a wall, it doesn't move
+                                # If the agent bumps into a wall, it doesn't move and receives a negative rewards
                                 if self.territory[new_row, new_col] == 1:
                                     new_row = row
                                     new_col = col
                                     reward = -10
                                 
-                                # If the agent bumps into a mine it reaches a terminal state
+                                # If the agent bumps into a mine it reaches a terminal state and receives a negative rewards
                                 if self.territory[new_row, new_col] == 2:
                                     new_row = row
                                     new_col = col
@@ -184,8 +228,8 @@ class MapWalkingEnv:
         self.initial_state_distrib /= self.initial_state_distrib.sum()
         self.action_space = Discrete(num_actions) #int(num_actions)
         self.observation_space = Discrete(num_states) # Encoded states shape
-        self.observation_space_decoded = len(list(self.decode(0))) # Decoded states shape
-        
+        self.observation_space_decoded = len(list(self.decode_grid(0))) # Decoded states shape
+
     def get_empty_cells(self, n_cells):
         empty_cells_coord = np.where( self.territory == 0 )
         selected_indices = np.random.choice( np.arange(len(empty_cells_coord[0])), n_cells )
@@ -195,15 +239,70 @@ class MapWalkingEnv:
             return np.asarray(selected_coordinates).reshape(2,)
         
         return selected_coordinates
+    
+    def add_encoded_states(self):
+        wall_states = [(0,1),(1,5),(2,5),(3,0),(3,1),(3,3),(3,4),(3,6),(4,2),(4,4),(4,6),(4,7),(4,8),
+                       (5,2),(5,4),(7,6),(7,7),(7,8),(7,9),(8,1),(8,2),(8,3),(8,4),(8,5),(9,7)]
+    
+        components = {'wall': [(0,1),(1,5),(2,5),(3,0),(3,1),(3,3),(3,4),(3,6),(4,2),(4,4),(4,6),(4,7),(4,8),
+                       (5,2),(5,4),(7,6),(7,7),(7,8),(7,9),(8,1),(8,2),(8,3),(8,4),(8,5),(9,7)],
+                      'mine': [(0,9)],
+                      'safe':[(0,8)],
+                      'unsafe':[(9,9)],
+                      'key':[(5,7)],
+                      'door':[(0,8)],
+                      'hostage':[(9,8)]}
+    
+        #components['agent'] = [(4,5)]
+        layer = 0
+        for name, piece in components.items():
+            #pos = (layer,) + piece.pos
+            for index in piece:
+                self.displ_board[layer][index] = 1
+            layer += 1
+
+    def decode_grid(self, state):
         
+        row, col, key_idx, host_idx, exit_idx = np.array([v for _,v in enumerate(self.decode(state))])
+        
+        # Reset agent 
+        layer = 7
+        self.displ_board[layer][:] = 0
+        
+        # Move agent to new location
+        self.displ_board[7][row, col] = 1
+        
+        # If key is found
+        if (key_idx == 1):
+            layer = 4
+            self.displ_board[layer][:] = 0
+            # Update key location with agent location
+            self.displ_board[4][row, col] = self.displ_board[7][row, col]
+        
+        # If door is found
+        if (exit_idx == 1):
+            layer = 5
+            self.displ_board[layer][:] = 0
+            # Update door location with agent location
+            self.displ_board[5][row, col] = self.displ_board[7][row, col]
+        
+        # If hostage is found
+        if (host_idx == 1):
+            layer = 6
+            self.displ_board[layer][:] = 0
+            # Update hostage location with agent location
+            self.displ_board[6][row, col] = displ_board[7][row, col]
+
+        return self.displ_board.reshape(-1)
+
+
     def get_exit_cells(self, n_cells):
         y=np.arange(self.territory.shape[0] * self.territory.shape[1]).reshape(self.territory.shape[0], self.territory.shape[1])        
         border_coord_indices = list(np.unique(np.array(sorted(np.concatenate([y[0,:],y[-1,:],y[:,0], y[:,-1]]))).reshape(1,-1)))
         border_coord=np.zeros((2,len(border_coord_indices)),dtype = np.int8)
         border_coord[0] = [int(i) for i,ival in enumerate(y) for j,jval in enumerate(ival) if y[i,j] in border_coord_indices]
         border_coord[1] = [j for i,ival in enumerate(y) for j,jval in enumerate(ival) if y[i,j] in border_coord_indices]
-        #print(border_coord_indices)
-        #print(border_coord)
+
         selected_indices = np.random.choice( np.arange(len(border_coord[0])), n_cells )
         selected_coordinates = border_coord[0][selected_indices], border_coord[1][selected_indices]
         
@@ -211,7 +310,7 @@ class MapWalkingEnv:
             return np.asarray(selected_coordinates).reshape(2,)
         
         return selected_coordinates
-    
+
     
     # a key function for the q learning update rule
     def step(self, action):
@@ -235,11 +334,14 @@ class MapWalkingEnv:
         return (int(state), reward, done, {"prob": p})
    
 
-    def agent_on_map(self):
-        #prints out current location of agent on the grid
-        grid = np.zeros((self.N, self.M))
-        grid[ self.current_location[0], self.current_location[1]] = 1
-        return grid
+    def eval_reward(self):
+        if (self.position_agent == (self.exit_coord[1][0], self.exit_coord[1][1]) or \
+           (self.position_agent == (self.mine_coord[0][0], self.mine_coord[0][1]))):
+            return -100
+        elif (self.position_agent == (self.exit_coord[0][0], self.exit_coord[0][1])):
+            return 100
+        else:
+            return -1
     
     
     def encode(self, agent_row, agent_col, key_idx, host_idx, exit_idx):
@@ -294,27 +396,15 @@ class MapWalkingEnv:
             full_repr += line + "\n"
         
         if key_idx == 1 and exit_idx == 0: # Agent found the key but did not open the door yet
-            full_repr = full_repr.replace('A',colorize('A', "yellow", highlight=True))
+            full_repr = full_repr.replace('A',colorise('A', "yellow", highlight=True))
         elif exit_idx == 1 and host_idx == 0: # Agent opened the door but did not find hostage
-            full_repr = full_repr.replace('A',colorize('A', "blue", highlight=True))
+            full_repr = full_repr.replace('A',colorise('A', "blue", highlight=True))
         elif host_idx == 1: # Agent found the hostage
-            full_repr = full_repr.replace('A',colorize('A', "green", highlight=True))
+            full_repr = full_repr.replace('A',colorise('A', "green", highlight=True))
 
         print('Key (Yellow):',key_idx,'/ Door (Blue):',exit_idx,'/ Hostage (Green):',host_idx,'- Agent start',self.start_agent)
         print(full_repr)
 
-        
-    def calculate_observations(self):
-        
-        relative_coordinates = self.position_exit - self.position_agent
-                
-        surroundings = self.territory[ self.position_agent[0] -1: self.position_agent[0] +2,
-                                     self.position_agent[1] -1: self.position_agent[1] +2]
-        
-        obs = {'relative_coordinates':relative_coordinates,
-               'surroundings': surroundings}
-        
-        return obs
         
     def reset(self, return_info: bool = False):
         #This function resets the environment for the agent
@@ -335,9 +425,12 @@ class MapWalkingEnv:
                 self.position_agent = (new_coord[0],new_coord[1])
         
         #self.position_agent = (6,9)
+        # Assign position to agent
         self.start_agent = self.position_agent
         
-
+        # Move agent to new location
+        self.displ_board[7][new_coord[0],new_coord[1]] = 1
+        
         self.lastaction = None
         if not return_info:
             return int(self.s)
